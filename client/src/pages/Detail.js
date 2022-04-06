@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@apollo/client";
-
+import { idbPromise } from "../utils/helpers";
 import { QUERY_PRODUCTS } from "../utils/queries";
 import spinner from "../assets/spinner.gif";
 import { useStoreContext } from "../utils/GlobalState";
@@ -25,11 +25,18 @@ function Detail() {
         _id: id,
         purchaseQuantity: parseInt(itemInCart.purchaseQuantity) + 1,
       });
+      // if we're updating quantity, use existing item data and increment purchaseQuantity value by one
+    idbPromise('cart', 'put', {
+      ...itemInCart,
+      purchaseQuantity: parseInt(itemInCart.purchaseQuantity) + 1
+    });
     } else {
       dispatch({
         type: ADD_TO_CART,
         product: { ...currentProduct, purchaseQuantity: 1 },
       });
+      // if product isn't in the cart yet, add it to the current shopping cart in IndexedDB
+    idbPromise('cart', 'put', { ...currentProduct, purchaseQuantity: 1 });
     }
   };
 
@@ -38,6 +45,9 @@ function Detail() {
       type: REMOVE_FROM_CART,
       _id: currentProduct._id,
     });
+
+    // upon removal from cart, delete the item from IndexedDB using the `currentProduct._id` to locate what to remove
+  idbPromise('cart', 'delete', { ...currentProduct });
   };
 
   const { id } = useParams();
@@ -49,6 +59,7 @@ function Detail() {
   const { products, cart } = state;
 
   useEffect(() => {
+    // already in gloabl store
     if (products.length) {
       setCurrentProduct(products.find((product) => product._id === id));
     } else if (data) {
@@ -56,8 +67,21 @@ function Detail() {
         type: UPDATE_PRODUCTS,
         products: data.products,
       });
+
+      data.products.forEach((product) => {
+        idbPromise('products', 'put', product);
+      });
     }
-  }, [products, data, dispatch, id]);
+    // get cache from idb
+    else if (!loading) {
+      idbPromise('products', 'get').then((indexedProducts) => {
+        dispatch({
+          type: UPDATE_PRODUCTS,
+          products: indexedProducts
+        });
+      });
+    }
+  }, [products, data, loading, dispatch, id]);
   return (
     <>
       {currentProduct ? (
